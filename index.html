@@ -846,6 +846,10 @@ document.querySelectorAll('.over-card').forEach(card => {
 
 // MATCH START BUTTON CLICK EVENT
 bowlBtn.addEventListener('click', () => {
+// ඔයාගේ Audio Variable එකේ නම iplMusic නම්:
+if (typeof iplMusic !== 'undefined') {
+    iplMusic.play().catch(e => console.log("Audio play blocked: ", e));
+}
     if (audioCtx.state === 'suspended') audioCtx.resume();
     
     // දැනට Active වෙලා තියෙන Card එකෙන් අගය ස්ථිරවම තහවුරු කර ගැනීම
