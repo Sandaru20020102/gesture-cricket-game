@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="sin">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture Cricket - Ultimate Multi-Ball Edition</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            z-index: 1;
+        }
+
+        /* 🏟️ Real Ground Container */
+        #stadium {
+            flex: 2;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8);
+        }
+
+        /* 🎬 Static Stadium Background Layer */
+        #stadium-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('ground.jpg');
+            background-size: cover;
+            background-position: center;
+            z-index: 1;
+        }
+
+        /* Effects Layer Canvas */
+        #fx_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Camera Feed Sidebar */
+        #camera-panel {
+            flex: 1;
+            background-color: #1a1a1a;
+            border-left: 4px solid #fbc02d;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 10px;
+            z-index: 10;
+        }
+
+        video,
+        #output_canvas {
+            position: absolute;
+            width: 90%;
+            height: auto;
+            border-radius: 10px;
+            transform: rotateY(180deg);
+        }
+
+        #output_canvas {
+            z-index: 5;
+        }
+
+        /* Bowler Placement */
+        #bowler {
+            position: absolute;
+            bottom: 30%;
+            left: 52%;
+            transform: translateX(-50%);
+            width: 50px;
+            height: auto;
+            z-index: 2;
+            display: none;
+            object-fit: contain;
+        }
+
+        /* 💥 Ultra Large & Close Bat Setup */
+        #cricket-bat {
+            position: absolute;
+            width: 280px;
+            height: auto;
+            z-index: 100;
+            transform-origin: center bottom;
+            pointer-events: none;
+            left: 50%;
+            top: 86%;
+            filter: drop-shadow(5px 15px 25px rgba(0, 0, 0, 0.7));
+        }
+
+        /* ⚾ Enhanced 3D Seam Spinning Cricket Ball */
+        #ball {
+            position: absolute;
+            width: 38px;
+            height: 38px;
+            background: radial-gradient(circle at 30% 30%, #ff4d4d, #800000);
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(255, 51, 51, 0.8), inset -3px -3px 8px rgba(0, 0, 0, 0.6);
+            z-index: 4;
+            display: none;
+            transform: translate(-50%, -50%);
+            overflow: hidden;
+        }
+
+        /* 🧵 Simulated Ball Seam */
+        #ball::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 45%;
+            width: 10%;
+            height: 100%;
+            background: repeating-linear-gradient(0deg, #ffffff, #ffffff 2px, transparent 2px, transparent 4px);
+            opacity: 0.4;
+            transform: rotate(45deg);
+        }
+
+        .spin-animation {
+            animation: ballSpin 0.2s linear infinite;
+        }
+
+        @keyframes ballSpin {
+            0% {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
+        /* 📊 Scoreboard UI */
+        #ticker-scoreboard {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            background: rgba(14, 14, 14, 0.92);
+            border-left: 5px solid #fbc02d;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 8px 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            z-index: 20;
+            gap: 25px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .board-segment {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .board-segment .label {
+            font-size: 11px;
+            color: #aaaaaa;
+            letter-spacing: 1px;
+            font-weight: 800;
+            margin-bottom: -2px;
+        }
+
+        .board-segment span:not(.label) {
+            font-size: 28px;
+            font-weight: 900;
+            color: #ffffff;
+        }
+
+        #score-txt {
+            color: #ffee58 !important;
+        }
+
+        .status-pill {
+            background: #fbc02d;
+            color: #121212 !important;
+            font-size: 13px !important;
+            font-weight: 800;
+            padding: 6px 14px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+        }
+
+        /* ⏳ Countdown Overlay */
+        #countdown-overlay {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 25px;
+            border-radius: 20px;
+            border: 1px solid #00ffcc;
+            color: #00ffcc;
+            display: none;
+            z-index: 25;
+            text-align: center;
+        }
+
+        #umpire-signal {
+            position: absolute;
+            top: 25%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 55px;
+            font-weight: 900;
+            text-transform: uppercase;
+            text-shadow: 3px 3px 0px #000, 0 0 30px rgba(255, 255, 255, 0.6);
+            z-index: 20;
+            display: none;
+            text-align: center;
+        }
+
+        .status-text {
+            color: #fbc02d;
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        #bowl-btn {
+            margin-top: 25px;
+            padding: 15px 45px;
+            font-size: 22px;
+            font-weight: bold;
+            background-color: #fbc02d;
+            color: #121212;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(251, 192, 45, 0.4);
+            z-index: 20;
+            transition: 0.2s;
+        }
+
+        #bowl-btn:hover {
+            transform: scale(1.05);
+            background-color: #ffee58;
+        }
+
+        /* 🕹️ Controls Containers */
+        .controls-container {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            z-index: 20;
+            width: 90%;
+            justify-content: center;
+        }
+
+        .control-btn {
+            flex: 1;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            text-transform: uppercase;
+        }
+
+        #pause-btn {
+            background-color: #2196f3;
+            color: white;
+            box-shadow: 0 4px 10px rgba(33, 150, 243, 0.3);
+        }
+
+        #pause-btn:hover {
+            background-color: #64b5f6;
+        }
+
+        #quit-btn {
+            background-color: #e53935;
+            color: white;
+            box-shadow: 0 4px 10px rgba(229, 57, 53, 0.3);
+        }
+
+        #quit-btn:hover {
+            background-color: #ef5350;
+        }
+
+        /* 📈 FIXED STATS OVERLAY */
+        #stats-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .stats-panel {
+            background: #1e1e1e;
+            border: 2px solid #fbc02d;
+            border-radius: 12px;
+            padding: 25px;
+            width: 85%;
+            max-width: 750px;
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        }
+
+        .chart-box {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+        }
+
+        .chart-box h4 {
+            margin: 0 0 15px 0;
+            color: #fbc02d;
+            text-transform: uppercase;
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+
+        .canvas-stat {
+            background: #121212;
+            border: 1px solid #333;
+            border-radius: 8px;
+            display: block;
+        }
+
+        #close-stats-btn {
+            margin-top: 25px;
+            padding: 12px 35px;
+            background: #fbc02d;
+            color: #121212;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s;
+        }
+
+        #close-stats-btn:hover {
+            background: #ffee58;
+        }
+
+        /* --- Over Tracker එක සඳහා CSS මෝස්තර --- */
+.over-tracker {
+    display: flex;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 6px 12px;
+    border-radius: 20px;
+    align-items: center;
+}
+
+.ball-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: bold;
+    color: white;
+    background: #37474f; /* හිස් පන්දු සඳහා අළු පැහැය */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+.ball-dot-w { background: #e53935; } /* Wicket - රතු */
+.ball-dot-4 { background: #1e88e5; } /* Four - නිල් */
+.ball-dot-6 { background: #4caf50; } /* Six - කොළ */
+.ball-dot-run { background: #2e7d32; } /* 1,2,3 Runs - තද කොළ */
+    </style>
+</head>
+
+<body>
+
+    <div id="game-container">
+        <div id="stadium">
+            <div id="stadium-bg"></div>
+            <canvas id="fx_canvas"></canvas>
+
+            <div id="ticker-scoreboard">
+                <div class="board-segment">
+                    <span class="label">SCORE</span>
+                    <span id="score-txt">0/0</span>
+                </div>
+                <div class="board-segment">
+                    <span class="label">OVERS</span>
+                    <span id="overs-txt">0.0</span>
+                </div>
+                <div class="board-segment status-pill" id="match-phase" onclick="toggleStatsPanel()">
+                    STATS 📊
+                </div>
+                <div class="board-segment">
+    <span class="label">THIS OVER</span>
+    <div id="over-tracker-ui" class="over-tracker">
+        <div class="ball-circle">-</div>
+        <div class="ball-circle">-</div>
+        <div class="ball-circle">-</div>
+        <div class="ball-circle">-</div>
+        <div class="ball-circle">-</div>
+        <div class="ball-circle">-</div>
+    </div>
+</div>
+            </div>
+
+            <div id="countdown-overlay">Next Ball in 3...</div>
+
+            <img id="bowler" src="bowler.png" alt="Bowler">
+            <img id="cricket-bat" src="bat.png" alt="Bat">
+
+            <div id="fielders-container"
+                style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none;">
+                <img class="fielder" src="fielder.png"
+                    style="position: absolute; bottom: 32%; left: 22%; width: 80px; z-index: 3; transform: translate(-50%, 50%);" />
+
+                <img class="fielder" src="fielder.png"
+                    style="position: absolute; bottom: 32%; left: 34%; width: 35px; z-index: 3; transform: translate(-50%, 50%);" />
+
+                <img class="fielder" src="fielder.png"
+                    style="position: absolute; bottom: 32%; left: 78%; width: 92px; z-index: 3; transform: translate(-50%, 50%);" />
+
+                <img class="fielder" src="fielder.png"
+                    style="position: absolute; bottom: 32%; left: 63%; width: 42px; z-index: 3; transform: translate(-50%, 50%);" />
+            </div>
+
+            <div id="ball"></div>
+            <div id="umpire-signal">FOUR! 🏏 </div>
+        </div>
+
+        <div id="camera-panel">
+            <h3 style="margin-bottom: 20px; color: #fbc02d;">AI Live Cricket Engine</h3>
+            <div
+                style="position: relative; width: 90%; height: 260px; display: flex; justify-content: center; background: #000; border-radius:10px;">
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+            <p class="status-text" id="status">Ready to Start Match...</p>
+            <button id="bowl-btn">START MATCH 🏏</button>
+
+            <div id="match-settings-ui" style="text-align: center; margin-bottom: 25px; z-index: 10; font-family: 'Segoe UI', sans-serif;">
+    <p style="font-size: 16px; text-transform: uppercase; letter-spacing: 2px; color: #a0aec0; margin-bottom: 12px; font-weight: 600;">
+        Select Match Length
+    </p>
+    <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 10px;">
+        <div class="over-card active" data-value="1">
+            <span class="num">1</span>
+            <span class="txt">Over</span>
+        </div>
+        <div class="over-card" data-value="2">
+            <span class="num">2</span>
+            <span class="txt">Overs</span>
+        </div>
+        <div class="over-card" data-value="5">
+            <span class="num">5</span>
+            <span class="txt">Overs</span>
+        </div>
+        <div class="over-card" data-value="10">
+            <span class="num">10</span>
+            <span class="txt">Overs</span>
+        </div>
+    </div>
+</div>
+
+<style>
+    .over-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        width: 80px;
+        padding: 12px 5px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(5px);
+    }
+    .over-card:hover {
+        background: rgba(255, 235, 59, 0.1);
+        border-color: rgba(255, 235, 59, 0.5);
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(255, 235, 59, 0.2);
+    }
+    .over-card.active {
+        background: linear-gradient(135deg, #fbc02d, #ffeb3b);
+        border-color: #ffeb3b;
+        transform: scale(1.05);
+        box-shadow: 0 0 20px rgba(255, 235, 59, 0.4);
+    }
+    .over-card .num {
+        font-size: 24px;
+        font-weight: 800;
+        color: white;
+        line-height: 1;
+    }
+    .over-card.active .num {
+        color: #121212;
+    }
+    .over-card .txt {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 4px;
+        color: #a0aec0;
+        font-weight: 600;
+    }
+    .over-card.active .txt {
+        color: #333;
+    }
+</style>
+
+            <div class="controls-container">
+                <button id="pause-btn" class="control-btn" style="display: none;">Pause Game ⏸️</button>
+                <button id="quit-btn" class="control-btn" style="display: none;">Quit Game 🛑</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="stats-overlay">
+        <div class="stats-panel">
+            <div class="chart-box">
+                <h4>Wagon Wheel 🏏</h4>
+                <canvas id="wagonWheelCanvas" class="canvas-stat" width="300" height="300"></canvas>
+            </div>
+            <div class="chart-box">
+                <h4>Run Rate Tracker 📈</h4>
+                <canvas id="runRateCanvas" class="canvas-stat" width="300" height="300"></canvas>
+            </div>
+        </div>
+        <button id="close-stats-btn" onclick="toggleStatsPanel()">Back To Stadium 🏟️</button>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        const fxCanvas = document.getElementById('fx_canvas');
+        const fxCtx = fxCanvas.getContext('2d');
+
+        const stadiumBg = document.getElementById('stadium-bg');
+        const stadium = document.getElementById('stadium');
+        const statusText = document.getElementById('status');
+        const ball = document.getElementById('ball');
+        const bowler = document.getElementById('bowler');
+        const cricketBat = document.getElementById('cricket-bat');
+        const umpireSignal = document.getElementById('umpire-signal');
+
+        const scoreTxtDisplay = document.getElementById('score-txt');
+        const oversTxtDisplay = document.getElementById('overs-txt');
+        const matchPhaseDisplay = document.getElementById('match-phase');
+
+        const bowlBtn = document.getElementById('bowl-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const quitBtn = document.getElementById('quit-btn');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+
+        let shotAnglesRecord = [];
+        let runOverHistory = [0];
+        
+        // --- 🟢 Over Tracker එක සඳහා වත්මන් ඕවරයේ පන්දු වල ප්‍රතිඵල තබා ගැනීමට ---
+        let currentOverBalls = [];
+
+        let totalRuns = 0;
+        let totalWickets = 0;
+        let validBallsBowled = 0;
+        let maxOversLimit = 1;       // Player තෝරාගන්නා ඕවර ගණන (Default 1)
+let maxBallsAllowed = 6;
+
+        let ballActive = false;
+        let hitActive = false;
+        let matchStarted = false;
+        let gameOver = false;
+        let isPaused = false;
+
+        let currentBatX = 50;
+        let currentBatY = 86;
+        let currentBatAngle = 0;
+        const smoothingFactor = 0.20;
+
+        let ballAnimId = null;
+        let fxAnimId = null;
+        let deliveryDuration = 1100;
+        let deliveryStartTime = 0;
+        let hitStartTime = 0;
+        let pausedTimeOffset = 0;
+        let targetBallLine = 50;
+        let currentBallType = "normal";
+        let pitchDustTriggered = false;
+
+        let ballGlobalX = 50;
+        let ballGlobalY = 65;
+        let hitTargetX = 50;
+        let hitTargetY = 35;
+        let hitStartGridX = 50;
+        let hitStartGridY = 86;
+        let latestBatSpeed = 0;
+        let hitRunsContext = 1;
+
+        let countdownInterval = null;
+        let countdownRemaining = 3;
+        let bowlerTimeoutId = null;
+        let dustParticles = [];
+
+        // Fielders positions mapping matching the HTML setup (X%, Y%)
+        const fieldersList = [
+            { x: 22, y: 68 }, // Left Deep Fielder
+            { x: 50, y: 62 }, // Straight Deep Fielder (Top grass edge)
+            { x: 78, y: 68 }, // Right Deep Fielder
+            { x: 45, y: 52 }  // Near Pitch/Bowler Fielder
+        ];
+        let fielderCheckTriggered = false; // එක පන්දුවකට එකවරක් පමණක් චෙක් කිරීමට
+
+        function resizeFxCanvas() {
+            fxCanvas.width = stadium.clientWidth;
+            fxCanvas.height = stadium.clientHeight;
+        }
+        window.addEventListener('resize', resizeFxCanvas);
+        resizeFxCanvas();
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // --- 🎵 IPL Music (Papare) Setup ---
+        const iplMusic = new Audio('IPL.mp3');
+
+        function playIPLMusic() {
+            if (isPaused) return;
+            iplMusic.currentTime = 0; // මුල සිට ආරම්භ කිරීමට
+            iplMusic.volume = 0.6;    // ශබ්ද ප්‍රමාණය (Volume)
+            iplMusic.play().catch(e => console.log("Audio play error:", e));
+        }
+
+        function playHitSound() {
+            if (isPaused) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(160, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.8, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.13);
+        }
+
+        function playCrowdCheer() {
+            if (isPaused) return;
+            let bufferSize = audioCtx.sampleRate * 1.5;
+            let buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            let data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
+            let noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            let filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass'; filter.frequency.value = 400; filter.Q.value = 1.5;
+            let gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.4);
+            noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+            noise.start();
+        }
+
+        function playOutSound() {
+            if (isPaused) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.6);
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+        }
+
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 0, smoothLandmarks: true,
+            minDetectionConfidence: 0.5, minTrackingConfidence: 0.5
+        });
+        pose.onResults(onResultsPose);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await pose.send({ image: videoElement }); },
+            width: 640, height: 480
+        });
+        camera.start().then(() => { statusText.innerText = "System Engine Ready! Click Start Match."; });
+
+        function onResultsPose(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (!results.poseLandmarks || gameOver || isPaused) return;
+
+            const leftWrist = results.poseLandmarks[15];
+            const rightWrist = results.poseLandmarks[16];
+            const leftShoulder = results.poseLandmarks[11];
+            const rightShoulder = results.poseLandmarks[12];
+
+            drawSimpleSkeleton(results.poseLandmarks);
+
+            if (leftWrist && rightWrist) {
+                let midWristX = (leftWrist.x + rightWrist.x) / 2;
+                let midWristY = (leftWrist.y + rightWrist.y) / 2;
+
+                let targetPercentX = (1 - midWristX) * 100;
+                let targetPercentY = 78 + (midWristY * 15);
+
+                currentBatX += (targetPercentX - currentBatX) * smoothingFactor;
+                currentBatY += (targetPercentY - currentBatY) * smoothingFactor;
+
+                cricketBat.style.left = `${currentBatX}%`;
+                cricketBat.style.top = `${currentBatY}%`;
+
+                let angleRad = Math.atan2(leftWrist.y - rightWrist.y, leftWrist.x - rightWrist.x);
+                let targetAngleDeg = (angleRad * (180 / Math.PI)) - 90;
+
+                if (targetAngleDeg < -180) targetAngleDeg += 360;
+                if (targetAngleDeg > 180) targetAngleDeg -= 360;
+                targetAngleDeg = Math.max(-45, Math.min(45, targetAngleDeg));
+
+                if (leftShoulder && rightShoulder) {
+                    if (rightShoulder.x < leftShoulder.x) {
+                        targetAngleDeg += 15;
+                    } else {
+                        targetAngleDeg -= 15;
+                    }
+                }
+
+                currentBatAngle += (targetAngleDeg - currentBatAngle) * smoothingFactor;
+                cricketBat.style.transform = `translate(-50%, -100%) rotate(${currentBatAngle}deg)`;
+
+                if (ballActive && !hitActive) {
+                    let elapsedTime = performance.now() - deliveryStartTime;
+                    if (elapsedTime > 850 && elapsedTime < 1080) {
+                        latestBatSpeed = Math.abs(leftWrist.y - midWristY) + Math.abs(rightWrist.y - midWristY);
+
+                        let distanceX = Math.abs(currentBatX - ballGlobalX);
+                        let distanceY = Math.abs(currentBatY - ballGlobalY);
+
+                        if (latestBatSpeed > 0.03 && distanceX < 12 && distanceY < 15) {
+                            processHit();
+                        }
+                    }
+                }
+            }
+        }
+
+        function drawSimpleSkeleton(landmarks) {
+            canvasCtx.fillStyle = '#00ffcc';
+            [11, 12, 13, 14, 15, 16].forEach(i => {
+                let lm = landmarks[i];
+                if (lm) {
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 6, 0, 2 * Math.PI);
+                    canvasCtx.fill();
+                }
+            });
+        }
+
+        function updateScoreboardDisplay() {
+            scoreTxtDisplay.innerText = `${totalRuns}/${totalWickets}`;
+            let completedOvers = Math.floor(validBallsBowled / 6);
+            let remainingBalls = validBallsBowled % 6;
+            oversTxtDisplay.innerText = `${completedOvers}.${remainingBalls}`;
+        }
+
+        // --- 🟢 Over Tracker UI එක වර්ණ ගන්වමින් යාවත්කාලීන කරන ශ්‍රිතය ---
+        function updateOverTrackerUI() {
+            const trackerContainer = document.getElementById('over-tracker-ui');
+            if (!trackerContainer) return; 
+            
+            const circles = trackerContainer.getElementsByClassName('ball-circle');
+            
+            for (let i = 0; i < 6; i++) {
+                if (i < currentOverBalls.length) {
+                    let res = currentOverBalls[i];
+                    circles[i].innerText = res;
+                    
+                    circles[i].className = "ball-circle"; 
+                    if (res === 'W') circles[i].classList.add('ball-dot-w');
+                    else if (res === 4) circles[i].classList.add('ball-dot-4');
+                    else if (res === 6) circles[i].classList.add('ball-dot-6');
+                    else circles[i].classList.add('ball-dot-run');
+                } else {
+                    circles[i].innerText = "-";
+                    circles[i].className = "ball-circle";
+                }
+            }
+        }
+
+        // --- 🟢 Modern Overs Cards Click Handling & Start Logic ---
+
+// Cards Click වන විට Active Class එක මාරු කිරීම සහ අගය ගබඩා කිරීම
+document.querySelectorAll('.over-card').forEach(card => {
+    card.addEventListener('click', function() {
+        // කලින් Active වෙලා තිබ්බ එක අයින් කරන්න
+        document.querySelectorAll('.over-card').forEach(c => c.classList.remove('active'));
+        // ක්ලික් කරපු කාඩ් එක Active කරන්න
+        this.classList.add('active');
+        
+        // තෝරාගත් ඕවර් ගණන ගණනය කර සූදානම් කර තැබීම
+        maxOversLimit = parseInt(this.getAttribute('data-value'));
+        maxBallsAllowed = maxOversLimit * 6;
+    });
+});
+
+// MATCH START BUTTON CLICK EVENT
+bowlBtn.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    // දැනට Active වෙලා තියෙන Card එකෙන් අගය ස්ථිරවම තහවුරු කර ගැනීම
+    const activeCard = document.querySelector('.over-card.active');
+    if (activeCard) {
+        maxOversLimit = parseInt(activeCard.getAttribute('data-value'));
+        maxBallsAllowed = maxOversLimit * 6;
+    }
+
+    if (gameOver) {
+        resetGameData();
+        matchPhaseDisplay.innerText = "STATS 📊";
+        gameOver = false; matchStarted = true;
+        bowlBtn.style.display = 'none';
+        
+        // Restart කරන විට Settings UI එක නැවත පෙන්වීම
+        if (document.getElementById('match-settings-ui')) {
+            document.getElementById('match-settings-ui').style.display = 'block';
+        }
+        
+        showControlButtons(); startNextBallRoutine();
+        return;
+    }
+    if (matchStarted) return;
+    
+    matchStarted = true; 
+    bowlBtn.style.display = 'none';
+    
+    // තරගය ධාවනය වන විට Settings UI එක සඟවා තැබීම
+    if (document.getElementById('match-settings-ui')) {
+        document.getElementById('match-settings-ui').style.display = 'none';
+    }
+    
+    showControlButtons(); startNextBallRoutine();
+});
+        pauseBtn.addEventListener('click', () => {
+            if (!matchStarted || gameOver) return;
+            if (!isPaused) {
+                isPaused = true;
+                pauseBtn.innerText = "Resume Game ▶️";
+                statusText.innerText = "Game Paused.";
+                cancelAnimationFrame(ballAnimId);
+                if (ballActive && !hitActive) {
+                    pausedTimeOffset = performance.now() - deliveryStartTime;
+                } else if (hitActive) {
+                    pausedTimeOffset = performance.now() - hitStartTime;
+                }
+                if (countdownInterval) clearInterval(countdownInterval);
+                if (bowlerTimeoutId) clearTimeout(bowlerTimeoutId);
+            } else {
+                isPaused = false;
+                pauseBtn.innerText = "Pause Game ⏸️";
+                statusText.innerText = "Resuming Match...";
+                if (ballActive && !hitActive) {
+                    deliveryStartTime = performance.now() - pausedTimeOffset;
+                    animateBall();
+                } else if (hitActive) {
+                    hitStartTime = performance.now() - pausedTimeOffset;
+                    animateHitTrajectory();
+                } else if (countdownOverlay.style.display === 'block') {
+                    resumeCountdownRoutine();
+                }
+            }
+        });
+
+        quitBtn.addEventListener('click', () => {
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (bowlerTimeoutId) clearTimeout(bowlerTimeoutId);
+            cancelAnimationFrame(ballAnimId);
+
+            resetGameData(); endBallReset();
+
+            isPaused = false; gameOver = false; matchStarted = false;
+            pauseBtn.innerText = "Pause Game ⏸️";
+            statusText.innerText = "Match Terminated.";
+            umpireSignal.style.display = 'none'; countdownOverlay.style.display = 'none';
+            bowlBtn.innerText = "START MATCH 🏏"; bowlBtn.style.display = 'block';
+            // Quit කළ විට Settings UI එක නැවත පෙන්වීම
+if (document.getElementById('match-settings-ui')) {
+    document.getElementById('match-settings-ui').style.display = 'block';
+}
+            hideControlButtons();
+        });
+
+        function showControlButtons() { pauseBtn.style.display = 'block'; quitBtn.style.display = 'block'; }
+        function hideControlButtons() { pauseBtn.style.display = 'none'; quitBtn.style.display = 'none'; }
+
+        // --- 🟢 Game Reset ශ්‍රිතය නිවැරදි කිරීම ---
+        function resetGameData() {
+            totalRuns = 0;
+            totalWickets = 0; 
+            validBallsBowled = 0;
+            shotAnglesRecord = []; 
+            runOverHistory = [0];
+            currentOverBalls = []; 
+            updateScoreboardDisplay();
+            updateOverTrackerUI(); 
+        }
+
+        function startNextBallRoutine() {
+            if (gameOver || isPaused || !matchStarted) return;
+            // --- 🟢 ඕවර හෝ විකට් ඉවරදැයි පරීක්ෂා කිරීමේ තර්කනය ---
+    if (validBallsBowled >= maxBallsAllowed || totalWickets >= 10) {
+        let reason = totalWickets >= 10 ? "ALL OUT!" : "OVERS COMPLETED!";
+        statusText.innerText = `${reason} Match Finished.`;
+        triggerGameOver();
+        return;
+    }
+            umpireSignal.style.display = 'none';
+            countdownOverlay.style.display = 'block';
+            countdownRemaining = 3;
+            countdownOverlay.innerText = `Next Ball in ${countdownRemaining}...`;
+
+            countdownInterval = setInterval(() => {
+                if (isPaused || !matchStarted) return;
+                countdownRemaining--;
+                if (countdownRemaining > 0) {
+                    countdownOverlay.innerText = `Next Ball in ${countdownRemaining}...`;
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownOverlay.style.display = 'none';
+                    executeDelivery();
+                }
+            }, 1000);
+        }
+
+        function resumeCountdownRoutine() {
+            if (!matchStarted) return;
+            countdownOverlay.innerText = `Next Ball in ${countdownRemaining}...`;
+            countdownInterval = setInterval(() => {
+                if (isPaused || !matchStarted) return;
+                countdownRemaining--;
+                if (countdownRemaining > 0) {
+                    countdownOverlay.innerText = `Next Ball in ${countdownRemaining}...`;
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownOverlay.style.display = 'none';
+                    executeDelivery();
+                }
+            }, 1000);
+        }
+
+        function executeDelivery() {
+            if (gameOver || isPaused || !matchStarted) return;
+            bowler.style.display = 'block';
+            statusText.innerText = "Bowler running in...";
+
+            bowlerTimeoutId = setTimeout(() => {
+                if (gameOver || isPaused || !matchStarted) return;
+                ballActive = true;
+                hitActive = false;
+                pitchDustTriggered = false;
+                fielderCheckTriggered = false;
+                ball.style.display = 'block';
+                ball.classList.add('spin-animation');
+
+                // --- 🛠️ Wide පන්දු ලැබීමේ සම්භාවිතාවය අඩු කරන ලද නිවැරදි තර්කනය ---
+                let randomLine = Math.random();
+                if (randomLine < 0.75) {          // 75% ක්ම සාමාන්‍ය පන්දු (Normal Balls)
+                    currentBallType = "normal";
+                    targetBallLine = 50;
+                } else if (randomLine < 0.88) {   // 13% ක් Wide-Off පන්දු
+                    currentBallType = "wide-off";
+                    targetBallLine = 76;
+                } else {                          // 12% ක් Wide-Leg පන්දු
+                    currentBallType = "wide-leg";
+                    targetBallLine = 24;
+                }
+                deliveryStartTime = performance.now();
+                animateBall();
+                updateFxLoop();
+            }, 800);
+        }
+
+        function createPitchDust(x, y) {
+            dustParticles = [];
+            for (let i = 0; i < 25; i++) {
+                dustParticles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.7) * 4,
+                    radius: Math.random() * 4 + 2,
+                    alpha: 0.8
+                });
+            }
+        }
+
+        function updateFxLoop() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+            for (let i = dustParticles.length - 1; i >= 0; i--) {
+                let p = dustParticles[i];
+                p.x += p.vx; p.y += p.vy; p.alpha -= 0.02;
+                fxCtx.beginPath(); fxCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                fxCtx.fillStyle = `rgba(210, 185, 140, ${p.alpha})`;
+                fxCtx.fill();
+                if (p.alpha <= 0) dustParticles.splice(i, 1);
+            }
+            if (ballActive || dustParticles.length > 0) {
+                fxAnimId = requestAnimationFrame(updateFxLoop);
+            }
+        }
+
+        function animateBall() {
+            if (!ballActive || hitActive || gameOver || isPaused || !matchStarted) return;
+
+            let now = performance.now();
+            let elapsed = now - deliveryStartTime;
+            let progress = Math.min(elapsed / deliveryDuration, 1);
+
+            let currentSize = 6 + (32 * progress); 
+            ball.style.width = `${currentSize}px`;
+            ball.style.height = `${currentSize}px`;
+
+            ballGlobalX = 50 + ((targetBallLine - 50) * progress);
+            ballGlobalY = 65 + (29 * progress);
+
+            ball.style.left = `${ballGlobalX}%`;
+            ball.style.top = `${ballGlobalY}%`;
+            ball.style.transform = `translate(-50%, -50%)`;
+
+            if (progress >= 0.65 && !pitchDustTriggered) {
+                pitchDustTriggered = true;
+                let pixelX = (ballGlobalX / 100) * fxCanvas.width;
+                let pixelY = (ballGlobalY / 100) * fxCanvas.height;
+                createPitchDust(pixelX, pixelY);
+            }
+
+            if (progress < 1) {
+                ballAnimId = requestAnimationFrame(animateBall);
+            } else {
+                ball.classList.remove('spin-animation');
+                ballActive = false;
+                handleMissedBall();
+            }
+        }
+
+        // --- 🟢 පන්දුව මිස් වූ විට ක්‍රියාත්මක වන නිවැරදි ශ්‍රිතය ---
+        function handleMissedBall() {
+            endBallReset();
+            if (!matchStarted) return;
+
+            if (currentBallType === "wide-off" || currentBallType === "wide-leg") {
+                totalRuns += 1;
+                runOverHistory.push(totalRuns);
+                updateScoreboardDisplay();
+                statusText.innerText = `Wide Ball! +1 Run Extra. (${currentBallType.toUpperCase()})`;
+                showUmpireCall("WIDE BALL 🟢", "#00ffcc");
+                setTimeout(startNextBallRoutine, 3000);
+            } else {
+                validBallsBowled += 1;
+                totalWickets += 1;
+                
+                // Over Tracker එකට Wicket එකතු කිරීම
+                currentOverBalls.push('W');
+                if (currentOverBalls.length > 6) currentOverBalls = ['W'];
+                
+                runOverHistory.push(totalRuns);
+                updateScoreboardDisplay();
+                updateOverTrackerUI();
+                
+                if (totalWickets >= 10 || validBallsBowled >= maxBallsAllowed) {
+        triggerGameOver();
+    } else {
+        statusText.innerText = "BOWLED! You missed the ball.";
+        playOutSound();
+        showUmpireCall("OUT! 🔴", "#ff3333");
+        setTimeout(startNextBallRoutine, 3500);
+    }
+            }
+        }
+
+        // --- 🟢 පිත්තේ වැදුණු විට ලකුණු සහ IPL Music පණගන්වන ශ්‍රිතය ---
+        function processHit() {
+            cancelAnimationFrame(ballAnimId);
+            ballActive = false;
+            hitActive = true;
+            playHitSound();
+
+            validBallsBowled += 1;
+
+            if (latestBatSpeed > 0.08) hitRunsContext = 6;
+            else if (latestBatSpeed > 0.05) hitRunsContext = 4;
+            else if (latestBatSpeed > 0.04) hitRunsContext = 2;
+            else hitRunsContext = 1;
+
+            // Over Tracker එකට වත්මන් පන්දුවේ ලකුණු එකතු කිරීම
+            currentOverBalls.push(hitRunsContext);
+            if (currentOverBalls.length > 6) currentOverBalls = [hitRunsContext];
+            updateOverTrackerUI();
+
+            let calculatedAngle = Math.floor(Math.random() * 100) + 220;
+            let rad = (calculatedAngle * Math.PI) / 180;
+
+            hitStartGridX = ballGlobalX;
+            hitStartGridY = ballGlobalY;
+
+            hitTargetX = 50 + Math.cos(rad) * 45;
+            hitTargetY = 32 + (Math.random() * 6);
+
+            shotAnglesRecord.push({ angle: calculatedAngle, runs: hitRunsContext });
+
+            let msg = hitRunsContext === 6 ? "MASSIVE SIXER! 🚀" : hitRunsContext === 4 ? "CRACKING FOUR! 🏏" : `${hitRunsContext} RUN(S)! 🏃`;
+            let color = hitRunsContext === 6 ? "#4caf50" : hitRunsContext === 4 ? "#ffeb3b" : "#00e5ff";
+
+            // 4 හෝ 6 පහරවල් වලදී IPL Music එක ක්‍රියාත්මක කිරීම
+            if (hitRunsContext === 4 || hitRunsContext === 6) {
+                playCrowdCheer();
+                playIPLMusic(); 
+            }
+
+            totalRuns += hitRunsContext;
+            runOverHistory.push(totalRuns);
+            updateScoreboardDisplay();
+            showUmpireCall(msg, color);
+
+            hitStartTime = performance.now();
+            animateHitTrajectory();
+        }
+
+        function animateHitTrajectory() {
+            if (!hitActive || gameOver || isPaused || !matchStarted) return;
+
+            let now = performance.now();
+            let elapsed = now - hitStartTime;
+            let hitDuration = 1500;
+            let progress = Math.min(elapsed / hitDuration, 1);
+
+            let dynamicSize = 38 * (1 - progress);
+            dynamicSize = Math.max(2, dynamicSize); 
+
+            ball.style.width = `${dynamicSize}px`;
+            ball.style.height = `${dynamicSize}px`;
+
+            let currentX = hitStartGridX + (hitTargetX - hitStartGridX) * progress;
+            let currentY = hitStartGridY + (hitTargetY - hitStartGridY) * progress;
+
+            // --- 🟢 පන්දු රැකීමේ (Fielding) තර්කනය සහ Over Tracker යාවත්කාලීන කිරීම ---
+            if (!fielderCheckTriggered && progress > 0.2 && progress < 0.8) {
+                fieldersList.forEach(fielder => {
+                    let distanceToFielder = Math.sqrt(Math.pow(currentX - fielder.x, 2) + Math.pow(currentY - fielder.y, 2));
+
+                    if (distanceToFielder < 6) {
+                        fielderCheckTriggered = true; 
+
+                        // පිත්තේ වේගය 0.06 ට වැඩි නම් Misfield වේ
+                        if (latestBatSpeed > 0.06) {
+                            statusText.innerText = "Misfield! Fielder missed the power shot!";
+                        } else {
+                            // වේගය අඩු නම් දැවී යාම (Catch / Run Out)
+                            hitActive = false;
+                            ball.style.display = 'none';
+                            totalWickets += 1;
+                            
+                            // දැවී ගිය නිසා Over Tracker එකේ අවසන් පන්දුව 'W' කිරීම
+                            currentOverBalls[currentOverBalls.length - 1] = 'W';
+                            
+                            runOverHistory.push(totalRuns);
+                            updateScoreboardDisplay();
+                            updateOverTrackerUI();
+                            playOutSound();
+
+                            let outType = (hitRunsContext === 1 || latestBatSpeed < 0.04) ? "RUN OUT! 🏃‍♂️❌" : "CAUGHT OUT! 🛑⚾";
+                            umpireSignal.innerText = outType;
+                            umpireSignal.style.display = 'block';
+                            umpireSignal.style.color = '#e53935'; 
+
+                            if (totalWickets >= 10 || validBallsBowled >= maxBallsAllowed) {
+        triggerGameOver();
+    } else {
+        statusText.innerText = `Fielder made a brilliant play! ${outType}`;
+        setTimeout(startNextBallRoutine, 3500);
+    }
+                        }
+                    }
+                });
+            }
+
+            let arcHeightMultiplier = hitRunsContext === 6 ? 220 : hitRunsContext === 4 ? 70 : 40;
+            let parabolicArcY = Math.sin(progress * Math.PI) * arcHeightMultiplier * (1 - progress);
+
+            let finalRenderY = currentY - (parabolicArcY / stadium.clientHeight * 100);
+
+            ball.style.left = `${currentX}%`;
+            ball.style.top = `${finalRenderY}%`;
+            ball.style.transform = `translate(-50%, -50%)`; 
+
+            if (dynamicSize <= 4) {
+                ball.style.opacity = "0";
+            } else {
+                ball.style.opacity = "1";
+            }
+
+            if (progress < 1 && dynamicSize > 2) {
+                ballAnimId = requestAnimationFrame(animateHitTrajectory);
+            } else {
+                hitActive = false;
+                ball.style.opacity = "1";
+                ball.style.width = "38px";
+                ball.style.height = "38px";
+                endBallReset();
+                setTimeout(startNextBallRoutine, 1500);
+            }
+        }
+
+        function triggerGameOver() {
+            gameOver = true; matchStarted = false; hitActive = false;
+            playOutSound(); hideControlButtons();
+
+            matchPhaseDisplay.innerText = "SHOW STATS 📊";
+            statusText.innerText = `Bowled! Game Over.`;
+            showUmpireCall(`OUT! 🔴<br><span style="font-size:28px;">FINAL SCORE: ${totalRuns}/${totalWickets}</span>`, "#ff3333");
+
+            bowlBtn.innerText = "PLAY AGAIN 🔄"; bowlBtn.style.display = 'block';
+            // Game Over වූ විට ඊළඟ මැච් එක සඳහා Settings UI එක නැවත පෙන්වීම
+if (document.getElementById('match-settings-ui')) {
+    document.getElementById('match-settings-ui').style.display = 'block';
+}
+            setTimeout(renderAnalyticsDashboards, 1500);
+        }
+
+        function endBallReset() {
+            if (!hitActive) {
+                ball.style.display = 'none';
+                bowler.style.display = 'none';
+            }
+            if (ballAnimId && !hitActive && !ballActive) cancelAnimationFrame(ballAnimId);
+        }
+
+        function showUmpireCall(text, color) {
+            umpireSignal.innerHTML = text; umpireSignal.style.color = color; umpireSignal.style.display = 'block';
+        }
+
+        function toggleStatsPanel() {
+            const overlay = document.getElementById('stats-overlay');
+            if (overlay.style.display === "flex") {
+                overlay.style.display = "none";
+            } else {
+                renderAnalyticsDashboards();
+            }
+        }
+
+        function renderAnalyticsDashboards() {
+            document.getElementById('stats-overlay').style.display = "flex";
+            drawWagonWheel();
+            drawRunRateGraph();
+        }
+
+        function drawWagonWheel() {
+            const canvas = document.getElementById('wagonWheelCanvas');
+            const ctx = canvas.getContext('2d');
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const r = cx - 20;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.strokeStyle = "#444"; ctx.lineWidth = 3; ctx.stroke();
+            ctx.fillStyle = "#152215"; ctx.fill();
+
+            ctx.fillStyle = "#d2b98c"; ctx.fillRect(cx - 6, cy - 20, 12, 40);
+
+            shotAnglesRecord.forEach(shot => {
+                let rad = (shot.angle * Math.PI) / 180;
+                let targetX = cx + r * Math.cos(rad);
+                let targetY = cy + r * Math.sin(rad);
+
+                ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(targetX, targetY);
+
+                if (shot.runs === 6) { ctx.strokeStyle = "#4caf50"; ctx.lineWidth = 3; }
+                else if (shot.runs === 4) { ctx.strokeStyle = "#ffeb3b"; ctx.lineWidth = 2.5; }
+                else { ctx.strokeStyle = "#00e5ff"; ctx.lineWidth = 1.5; }
+                ctx.stroke();
+            });
+        }
+
+        function drawRunRateGraph() {
+            const canvas = document.getElementById('runRateCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let padding = 40;
+            let graphW = canvas.width - padding * 2;
+            let graphH = canvas.height - padding * 2;
+
+            ctx.beginPath(); ctx.moveTo(padding, padding); ctx.lineTo(padding, canvas.height - padding);
+            ctx.lineTo(canvas.width - padding, canvas.height - padding);
+            
+            // --- 🛠️ පැරණි stroke(); දෝෂය ctx.stroke(); ලෙස නිවැරදි කර ඇත ---
+            ctx.strokeStyle = "#555"; ctx.lineWidth = 2; ctx.stroke(); 
+
+            if (runOverHistory.length < 2) return;
+
+            let maxRuns = Math.max(...runOverHistory, 10);
+            let stepX = graphW / (runOverHistory.length - 1);
+
+            ctx.beginPath();
+            runOverHistory.forEach((val, index) => {
+                let x = padding + index * stepX;
+                let y = (canvas.height - padding) - (val / maxRuns) * graphH;
+                if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+
+            ctx.strokeStyle = "#fbc02d"; ctx.lineWidth = 4; ctx.stroke();
+
+            runOverHistory.forEach((val, index) => {
+                let x = padding + index * stepX;
+                let y = (canvas.height - padding) - (val / maxRuns) * graphH;
+                ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = "#ffffff"; ctx.fill();
+            });
+        }
+</script>
+</body>
+
+</html>
